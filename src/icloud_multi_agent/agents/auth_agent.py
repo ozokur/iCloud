@@ -18,10 +18,12 @@ class LocalAuthAgent:
 
     session_file: Path = _SESSION_FILE
 
-    def login(self, apple_id: str) -> dict:
-        # In the real implementation we would start SRP login here. For now we
-        # simply persist the apple_id to the session file and pretend that 2FA
-        # is required.
+    def login(self, apple_id: str, password: str) -> dict:
+        # In the real implementation we would start SRP login here with the
+        # provided password. For now we simply persist the apple_id to the
+        # session file and pretend that 2FA is required.
+        if not password:
+            raise ValueError("Password must be provided for login")
         self.session_file.write_text(json.dumps({"apple_id": apple_id}))
         return {"requires2FA": True}
 

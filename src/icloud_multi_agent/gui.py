@@ -7,6 +7,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Optional
 
+from . import __version__
 from .cli import DEFAULT_DATA_FILE, build_orchestrator
 from .config import SETTINGS
 
@@ -16,10 +17,11 @@ class BackupGUI:
 
     def __init__(self) -> None:
         self.root = tk.Tk()
-        self.root.title("Mock iCloud Backup Helper")
+        self.root.title(f"Mock iCloud Backup Helper v{__version__}")
         self.root.geometry("720x520")
 
         self.apple_id_var = tk.StringVar()
+        self.password_var = tk.StringVar()
         self.code_var = tk.StringVar()
         self.allow_private_var = tk.BooleanVar(value=SETTINGS.allow_private_endpoints)
         self.data_file_var = tk.StringVar(value=str(DEFAULT_DATA_FILE))
@@ -60,11 +62,14 @@ class BackupGUI:
 
         ttk.Label(auth_frame, text="Apple ID:").grid(row=0, column=0, sticky=tk.W, **padding)
         ttk.Entry(auth_frame, textvariable=self.apple_id_var, width=30).grid(row=0, column=1, **padding)
-        ttk.Label(auth_frame, text="2FA Kodu:").grid(row=0, column=2, sticky=tk.W, **padding)
-        ttk.Entry(auth_frame, textvariable=self.code_var, width=10).grid(row=0, column=3, **padding)
-        ttk.Button(auth_frame, text="Giriş Yap", command=self.on_login).grid(row=0, column=4, **padding)
+        ttk.Label(auth_frame, text="Parola:").grid(row=0, column=2, sticky=tk.W, **padding)
+        ttk.Entry(auth_frame, textvariable=self.password_var, width=20, show="*").grid(row=0, column=3, **padding)
+        ttk.Label(auth_frame, text="2FA Kodu:").grid(row=0, column=4, sticky=tk.W, **padding)
+        ttk.Entry(auth_frame, textvariable=self.code_var, width=10).grid(row=0, column=5, **padding)
+        ttk.Button(auth_frame, text="Giriş Yap", command=self.on_login).grid(row=0, column=6, **padding)
 
         auth_frame.columnconfigure(1, weight=1)
+        auth_frame.columnconfigure(3, weight=1)
 
         backup_frame = ttk.LabelFrame(self.root, text="Yedekler")
         backup_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
@@ -190,6 +195,11 @@ class BackupGUI:
         if not apple_id:
             messagebox.showwarning("Eksik bilgi", "Apple ID girin")
             return
+        password = self.password_var.get()
+        if not password:
+            password = simpledialog.askstring("Parola", "Apple ID parolasını girin:", show="*", parent=self.root)
+            if not password:
+                return
         code = self.code_var.get().strip()
         if not code:
             code = simpledialog.askstring("2FA", "2FA kodunu girin:", parent=self.root)
@@ -198,7 +208,7 @@ class BackupGUI:
 
         def worker():
             orchestrator = self._get_orchestrator()
-            return orchestrator.ensure_session(apple_id=apple_id, two_factor_code=code)
+            return orchestrator.ensure_session(apple_id=apple_id, password=password, two_factor_code=code)
 
         def on_success(session):
             self.log(f"{session.apple_id} için güvenilen oturum oluşturuldu.")

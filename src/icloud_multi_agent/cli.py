@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 from pathlib import Path
 from typing import Optional
 
+from . import __version__
 from .agents.auth_agent import LocalAuthAgent
 from .agents.backup_indexer import BackupIndexer
 from .agents.crypto_agent import HashVerifier
@@ -46,7 +48,12 @@ def build_orchestrator(allow_private: bool, data_file: Path) -> Orchestrator:
 
 
 def cmd_auth_login(orchestrator: Orchestrator, args: argparse.Namespace) -> None:
-    session = orchestrator.ensure_session(apple_id=args.apple_id, two_factor_code=args.code)
+    password = args.password or getpass.getpass("Apple ID password: ")
+    session = orchestrator.ensure_session(
+        apple_id=args.apple_id,
+        password=password,
+        two_factor_code=args.code,
+    )
     print(f"Trusted session for {session.apple_id} (token: {session.session_token})")
 
 
@@ -75,6 +82,7 @@ def cmd_backup_download(orchestrator: Orchestrator, args: argparse.Namespace) ->
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="iCloud backup helper (mock implementation)")
     parser.add_argument("--data-file", default=DEFAULT_DATA_FILE, type=Path, help="Mock data JSON path")
+    parser.add_argument("--version", "-V", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument(
         "--allow-private",
         action="store_true",
@@ -86,6 +94,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     auth_login = subparsers.add_parser("auth-login", help="Authenticate with Apple ID")
     auth_login.add_argument("--apple-id", required=True)
+    auth_login.add_argument("--password", required=False, help="Apple ID password (prompted if omitted)")
     auth_login.add_argument("--code", required=False, help="2FA code (otherwise prompted)")
     auth_login.set_defaults(func=cmd_auth_login)
 

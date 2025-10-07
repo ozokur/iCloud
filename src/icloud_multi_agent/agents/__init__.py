@@ -18,7 +18,7 @@ class Session:
 class AuthAgent(Protocol):
     """Authentication agent interface."""
 
-    def login(self, apple_id: str) -> dict:
+    def login(self, apple_id: str, password: str) -> dict:
         ...
 
     def submit_2fa(self, code: str) -> Session:

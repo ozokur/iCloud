@@ -22,13 +22,20 @@ class Orchestrator:
     reporter: ReportAgent
     policy: PolicyGate
 
-    def ensure_session(self, apple_id: Optional[str], two_factor_code: Optional[str] = None) -> Session:
+    def ensure_session(
+        self,
+        apple_id: Optional[str],
+        password: Optional[str] = None,
+        two_factor_code: Optional[str] = None,
+    ) -> Session:
         session = self.auth.load_session()
         if session:
             return session
         if not apple_id:
             raise ValueError("Apple ID must be provided when no trusted session exists")
-        login_result = self.auth.login(apple_id)
+        if not password:
+            raise ValueError("Password must be provided when no trusted session exists")
+        login_result = self.auth.login(apple_id, password)
         if not login_result.get("requires2FA"):
             raise RuntimeError("Unexpected login flow; mock implementation always requires 2FA")
         code = two_factor_code or input("Enter 2FA code: ")
