@@ -8,6 +8,7 @@ readme = "README.md"
 
 [project.scripts]
 icloud-helper = "icloud_multi_agent.cli:main"
+icloud-helper-gui = "icloud_multi_agent.gui:main"
 
 [tool.ruff]
 line-length = 100

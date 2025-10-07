@@ -25,6 +25,16 @@ This repository hosts a **mock** implementation of the multi-agent architecture 
    python -m icloud_multi_agent.cli --help
    ```
 
+5. Launch the GUI (optional):
+
+   ```bash
+   python -m icloud_multi_agent.gui
+   ```
+
+   The window lets you configure whether private endpoints are allowed, browse to a mock data
+   source, authenticate with your Apple ID/2FA code, refresh the backup list, and trigger downloads
+   into a local directory.
+
 ## Example Workflow
 
 ```bash
@@ -49,4 +59,4 @@ The download command will produce:
 - Replace `MockICloudAPI` with an adapter that interfaces with an approved source (USB backups,
   iCloud Drive files, etc.).
 - Implement stronger verification in `HashVerifier`, e.g. by comparing to manifest hashes.
-- Expand the CLI or wrap it in a GUI orchestrator as described in `agents.md`.
+- Extend the CLI/GUI to integrate with additional storage providers or richer verification flows.
