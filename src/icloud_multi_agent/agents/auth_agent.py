@@ -1,97 +1,141 @@
-"""Simplified authentication agent with local session persistence."""
+"""Authentication agent backed by the real iCloud web service."""
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
-from . import AuthAgent, AuthenticationError, Session
+from icloudpy import ICloudPyService
+from icloudpy.exceptions import (
+    ICloudPy2SARequiredException,
+    ICloudPyAPIResponseException,
+    ICloudPyFailedLoginException,
+)
 
-
-_SESSION_FILE = Path.home() / ".icloud_session.json"
-
-
-try:  # pragma: no cover - defensive path calculation
-    _DEFAULT_CREDENTIALS_FILE = Path(__file__).resolve().parents[3] / "data" / "mock_accounts.json"
-except IndexError:  # pragma: no cover - running from an unexpected location
-    _DEFAULT_CREDENTIALS_FILE = Path("data/mock_accounts.json").resolve()
+from . import AuthenticationError, Session
 
 
 @dataclass
-class LocalAuthAgent:
-    """A toy implementation storing session data locally."""
+class ICloudPyAuthAgent:
+    """Authenticate against Apple's web endpoints via :mod:`icloudpy`."""
 
-    session_file: Path = _SESSION_FILE
-    credentials_file: Path = _DEFAULT_CREDENTIALS_FILE
-    _cached_credentials: Dict[str, str] = field(default_factory=dict, init=False, repr=False)
+    session_file: Path = Path.home() / ".icloud_session.json"
+    cookie_directory: Path = Path.home() / ".icloudpy"
+    _service: Optional[ICloudPyService] = field(default=None, init=False, repr=False)
+    _apple_id: Optional[str] = field(default=None, init=False, repr=False)
+    _pending_device: Optional[Dict[str, Any]] = field(default=None, init=False, repr=False)
 
-    def _load_credentials(self) -> Dict[str, str]:
-        """Return a mapping of known Apple IDs to their passwords."""
-
-        if self._cached_credentials:
-            return self._cached_credentials
-
-        if not self.credentials_file.exists():
-            self._cached_credentials = {}
-            return self._cached_credentials
-
-        try:
-            raw = json.loads(self.credentials_file.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:  # pragma: no cover - configuration error path
-            raise AuthenticationError("Kimlik doğrulama bilgileri okunamadı.") from exc
-
-        accounts = {}
-        for entry in raw.get("accounts", []):
-            apple_id = entry.get("apple_id")
-            password = entry.get("password")
-            if not apple_id or not password:
-                continue
-            accounts[apple_id.lower()] = password
-
-        self._cached_credentials = accounts
-        return self._cached_credentials
-
-    def _write_session(self, payload: dict) -> None:
+    def _write_session_state(
+        self,
+        *,
+        apple_id: str,
+        session_token: Optional[str],
+        trusted: bool,
+    ) -> None:
+        payload = {"apple_id": apple_id, "trusted": trusted}
+        if session_token:
+            payload["session_token"] = session_token
         self.session_file.parent.mkdir(parents=True, exist_ok=True)
         self.session_file.write_text(json.dumps(payload), encoding="utf-8")
 
+    def _build_session(self, service: ICloudPyService, apple_id: str) -> Session:
+        data = service.session_data
+        token = data.get("session_token") or data.get("session_id") or ""
+        trusted = bool(service.is_trusted_session)
+        return Session(apple_id=apple_id, session_token=str(token), trusted=trusted)
+
+    # ------------------------------------------------------------------
+    # AuthAgent API
+    # ------------------------------------------------------------------
     def login(self, apple_id: str, password: str) -> dict:
-        # In the real implementation we would start SRP login here with the
-        # provided password. For now we validate credentials against a mock
-        # store and persist the Apple ID so the 2FA step can complete.
         if not password:
             raise ValueError("Password must be provided for login")
+        self.cookie_directory.mkdir(parents=True, exist_ok=True)
+        try:
+            service = ICloudPyService(
+                apple_id,
+                password,
+                cookie_directory=str(self.cookie_directory),
+            )
+        except ICloudPyFailedLoginException as exc:
+            raise AuthenticationError("Apple ID veya parola hatalı.") from exc
+        except ICloudPyAPIResponseException as exc:
+            raise AuthenticationError(f"iCloud oturum açma isteği reddedildi: {exc}") from exc
+        except ICloudPy2SARequiredException as exc:
+            # ``icloudpy`` raises this if the account mandates 2SA before we can
+            # even inspect session state.
+            raise AuthenticationError(str(exc)) from exc
 
-        credentials = self._load_credentials()
-        expected_password = credentials.get(apple_id.lower())
-        if expected_password is None or expected_password != password:
-            raise AuthenticationError("Apple ID veya parola hatalı.")
+        self._service = service
+        self._apple_id = apple_id
+        self._pending_device = None
 
-        self._write_session({"apple_id": apple_id})
-        return {"requires2FA": True}
+        requires_two_factor = service.requires_2fa or service.requires_2sa
+        if service.requires_2sa:
+            devices = service.trusted_devices or []
+            if not devices:
+                raise AuthenticationError(
+                    "İki adımlı doğrulama için kayıtlı cihaz bulunamadı."
+                )
+            device = devices[0]
+            if not service.send_verification_code(device):
+                raise AuthenticationError("Doğrulama kodu gönderilemedi.")
+            self._pending_device = device
+
+        session = None
+        if not requires_two_factor:
+            session = self._build_session(service, apple_id)
+        self._write_session_state(
+            apple_id=apple_id,
+            session_token=session.session_token if session else None,
+            trusted=session.trusted if session else service.is_trusted_session,
+        )
+        response = {"requires2FA": requires_two_factor}
+        if session:
+            response["session"] = session
+        return response
 
     def submit_2fa(self, code: str) -> Session:
-        # Fake 2FA success and store a trusted session token.
         if not code:
             raise AuthenticationError("2FA kodu boş olamaz.")
-        if not self.session_file.exists():
-            raise AuthenticationError("Aktif oturum bulunamadı. Lütfen önce Apple ID ve parolanızı gönderin.")
-        data = json.loads(self.session_file.read_text(encoding="utf-8"))
-        apple_id = data.get("apple_id")
-        if not apple_id:
-            raise AuthenticationError("Oturum bilgisi bozuk. Lütfen yeniden giriş yapın.")
-        session = Session(apple_id=apple_id, session_token="mock-token", trusted=True)
-        self._write_session({"apple_id": session.apple_id, "session_token": session.session_token, "trusted": True})
+        if not self._service or not self._apple_id:
+            raise AuthenticationError(
+                "Aktif oturum bulunamadı. Lütfen önce Apple ID ve parolanızı gönderin."
+            )
+
+        service = self._service
+        success = False
+        try:
+            if service.requires_2fa:
+                success = service.validate_2fa_code(code)
+            elif service.requires_2sa:
+                device = self._pending_device
+                if device is None:
+                    devices = service.trusted_devices or []
+                    if not devices:
+                        raise AuthenticationError(
+                            "Doğrulama için kullanılacak cihaz bulunamadı."
+                        )
+                    device = devices[0]
+                success = service.validate_verification_code(device, code)
+            else:
+                success = True
+        except ICloudPyAPIResponseException as exc:
+            raise AuthenticationError(f"2FA doğrulaması başarısız: {exc}") from exc
+
+        if not success:
+            raise AuthenticationError("Girilen 2FA kodu geçersiz.")
+
+        session = self._build_session(service, self._apple_id)
+        self._write_session_state(
+            apple_id=session.apple_id,
+            session_token=session.session_token,
+            trusted=session.trusted,
+        )
         return session
 
     def load_session(self) -> Optional[Session]:
-        if not self.session_file.exists():
-            return None
-        try:
-            raw = json.loads(self.session_file.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            return None
-        if "session_token" not in raw:
-            return None
-        return Session(apple_id=raw["apple_id"], session_token=raw["session_token"], trusted=raw.get("trusted", False))
+        # A completely password-less session restoration is not reliable across
+        # processes, so for now we always require an explicit login.
+        return None

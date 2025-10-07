@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] - 2025-10-07
+### Added
+- Gerçek Apple kimlik doğrulamasını sağlayan `icloudpy` tabanlı ajan ve 2FA/2SA kod gönderim desteği.
+
+### Changed
+- CLI ve GUI artık mock depolar yerine gerçek iCloud oturum açma akışını kullanıyor; orkestratör anında güvenilir oturumları tanır.
+
 ## [0.1.2] - 2024-05-31
 ### Added
 - Mock kimlik doğrulama deposuna yanlış Apple ID/parola girişlerini yakalayan denetimler ve kullanıcıya açık geri bildirimler.

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 from . import __version__
-from .agents.auth_agent import LocalAuthAgent
+from .agents.auth_agent import ICloudPyAuthAgent
 from .agents.backup_indexer import BackupIndexer
 from .agents.crypto_agent import HashVerifier
 from .agents.download_manager import LocalDownloadManager
@@ -34,7 +34,7 @@ def build_orchestrator(allow_private: bool, data_file: Path) -> Orchestrator:
     integrity = JsonlIntegrityLog(log_file=DEFAULT_LOG_FILE)
     reporter = JsonReportAgent(reports_dir=DEFAULT_REPORT_DIR)
     orchestrator = Orchestrator(
-        auth=LocalAuthAgent(),
+        auth=ICloudPyAuthAgent(),
         api=api,
         indexer=indexer,
         downloader=downloader,

@@ -62,10 +62,20 @@ class Orchestrator:
             self.integrity_log.record("auth_login_error", apple_id=apple_id, error=str(exc))
             raise
         requires_two_factor = bool(login_result.get("requires2FA"))
-        if not requires_two_factor:
-            raise RuntimeError("Unexpected login flow; mock implementation always requires 2FA")
-        self.integrity_log.record("auth_login", apple_id=apple_id, requires_2fa=requires_two_factor)
-        return Orchestrator.LoginState(requires_two_factor=True)
+        session = login_result.get("session")
+        if session and not isinstance(session, Session):  # Defensive: tolerate mapping payloads
+            session = Session(
+                apple_id=getattr(session, "apple_id", apple_id),
+                session_token=getattr(session, "session_token", ""),
+                trusted=getattr(session, "trusted", False),
+            )
+        self.integrity_log.record(
+            "auth_login",
+            apple_id=apple_id,
+            requires_2fa=requires_two_factor,
+            trusted=session.trusted if session else False,
+        )
+        return Orchestrator.LoginState(requires_two_factor=requires_two_factor, session=session)
 
     def complete_two_factor(self, code: Optional[str]) -> Session:
         """Complete the login flow once a 2FA code has been provided."""
