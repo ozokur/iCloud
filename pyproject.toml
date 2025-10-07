@@ -1,0 +1,14 @@
+[project]
+name = "icloud-multi-agent"
+version = "0.1.0"
+description = "Mock multi-agent helper for exploring iCloud backup download workflows"
+authors = [{name = "OpenAI Codex"}]
+requires-python = ">=3.11"
+readme = "README.md"
+
+[project.scripts]
+icloud-helper = "icloud_multi_agent.cli:main"
+icloud-helper-gui = "icloud_multi_agent.gui:main"
+
+[tool.ruff]
+line-length = 100
