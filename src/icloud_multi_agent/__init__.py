@@ -17,7 +17,7 @@ def _detect_version() -> str:
     except importlib_metadata.PackageNotFoundError:
         # Fallback for editable installs / direct source execution. Keep in sync
         # with ``pyproject.toml``.
-        return "0.2.0"
+        return "0.2.1"
 
 
 __all__ = ["__version__"]

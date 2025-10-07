@@ -58,7 +58,11 @@ def cmd_auth_login(orchestrator: Orchestrator, args: argparse.Namespace) -> None
 
 
 def cmd_backup_list(orchestrator: Orchestrator, args: argparse.Namespace) -> None:
-    backups = orchestrator.list_backups()
+    try:
+        backups = orchestrator.list_backups()
+    except PermissionError as exc:
+        print(str(exc))
+        return
     if not backups:
         print("No backups available under current policy.")
         return
@@ -67,13 +71,21 @@ def cmd_backup_list(orchestrator: Orchestrator, args: argparse.Namespace) -> Non
 
 
 def cmd_backup_plan(orchestrator: Orchestrator, args: argparse.Namespace) -> None:
-    device_name, total_files, total_bytes = orchestrator.plan(args.id, Path(args.dest))
+    try:
+        device_name, total_files, total_bytes = orchestrator.plan(args.id, Path(args.dest))
+    except PermissionError as exc:
+        print(str(exc))
+        return
     print(f"Backup {args.id} ({device_name}) -> {total_files} files, {total_bytes} bytes")
 
 
 def cmd_backup_download(orchestrator: Orchestrator, args: argparse.Namespace) -> None:
     destination = Path(args.dest)
-    plan, result, verification, report = orchestrator.download(args.id, destination)
+    try:
+        plan, result, verification, report = orchestrator.download(args.id, destination)
+    except PermissionError as exc:
+        print(str(exc))
+        return
     print(f"Downloaded {result.downloaded_files}/{plan.total_files} files to {destination}")
     print(f"Verification {'OK' if verification.ok else 'FAILED'}")
     print(f"Report saved to {report}")

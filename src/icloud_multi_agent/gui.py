@@ -166,7 +166,10 @@ class BackupGUI:
 
     def handle_error(self, error: Exception) -> None:
         self.log(f"Hata: {error}")
-        messagebox.showerror("Hata", str(error))
+        if isinstance(error, PermissionError):
+            messagebox.showwarning("Politika engeli", str(error))
+        else:
+            messagebox.showerror("Hata", str(error))
 
     def run_async(self, worker, on_success=None) -> None:
         def target() -> None:

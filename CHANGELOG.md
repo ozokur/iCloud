@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.1] - 2025-10-08
+### Fixed
+- "Yedekleri listele" isteği politika nedeniyle engellendiğinde CLI ve GUI'de kullanıcıya açık rehberlik sağlayan hata mesajları eklendi.
+- Orkestratör artık politika ihlallerini günlükleyip `--allow-private` bayrağı veya GUI'deki kutucuğu etkinleştirme yönünde rehberlik ediyor.
+
 ## [0.2.0] - 2025-10-07
 ### Added
 - Gerçek Apple kimlik doğrulamasını sağlayan `icloudpy` tabanlı ajan ve 2FA/2SA kod gönderim desteği.

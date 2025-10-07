@@ -17,7 +17,7 @@ from .agents import (
     Verifier,
 )
 from .agents.backup_indexer import BackupIndexer
-from .policy import PolicyGate
+from .policy import PolicyGate, PolicyViolation
 
 
 @dataclass
@@ -108,8 +108,22 @@ class Orchestrator:
         code = two_factor_code or input("Enter 2FA code: ")
         return self.complete_two_factor(code)
 
+    def _policy_denied(self, exc: PolicyViolation) -> PermissionError:
+        """Translate a policy violation into a user-facing permission error."""
+
+        message = (
+            "Özel iCloud cihaz yedeklerine erişim politika gereği devre dışı. "
+            "Komutu '--allow-private' bayrağıyla tekrar çalıştırın veya GUI'de "
+            "'Özel uç noktalara izin ver' seçeneğini etkinleştirin."
+        )
+        self.integrity_log.record("policy_denied", capability="device_backups", reason=str(exc))
+        return PermissionError(message)
+
     def list_backups(self) -> list[tuple[str, str, str, int]]:
-        backups = self.indexer.list_backups()
+        try:
+            backups = self.indexer.list_backups()
+        except PolicyViolation as exc:
+            raise self._policy_denied(exc) from exc
         return [
             (
                 backup.identifier,
@@ -121,11 +135,17 @@ class Orchestrator:
         ]
 
     def plan(self, backup_id: str, destination: Path) -> tuple[str, int, int]:
-        plan = self.api.plan_download(backup_id, destination)
+        try:
+            plan = self.api.plan_download(backup_id, destination)
+        except PolicyViolation as exc:
+            raise self._policy_denied(exc) from exc
         return plan.backup.device_name, plan.total_files, plan.total_bytes
 
     def download(self, backup_id: str, destination: Path):
-        plan = self.api.plan_download(backup_id, destination)
+        try:
+            plan = self.api.plan_download(backup_id, destination)
+        except PolicyViolation as exc:
+            raise self._policy_denied(exc) from exc
         self.storage.ensure_capacity(plan.total_bytes, destination)
         self.integrity_log.record(
             "download_start",
