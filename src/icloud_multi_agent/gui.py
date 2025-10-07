@@ -7,6 +7,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Optional
 
+from . import __version__
 from .cli import DEFAULT_DATA_FILE, build_orchestrator
 from .config import SETTINGS
 
@@ -16,10 +17,11 @@ class BackupGUI:
 
     def __init__(self) -> None:
         self.root = tk.Tk()
-        self.root.title("Mock iCloud Backup Helper")
+        self.root.title(f"Mock iCloud Backup Helper v{__version__}")
         self.root.geometry("720x520")
 
         self.apple_id_var = tk.StringVar()
+        self.password_var = tk.StringVar()
         self.code_var = tk.StringVar()
         self.allow_private_var = tk.BooleanVar(value=SETTINGS.allow_private_endpoints)
         self.data_file_var = tk.StringVar(value=str(DEFAULT_DATA_FILE))
@@ -30,6 +32,7 @@ class BackupGUI:
         self._cached_allow_private: Optional[bool] = None
         self._cached_data_file: Optional[Path] = None
         self._lock = threading.Lock()
+        self._awaiting_2fa = False
 
         self._build_ui()
 
@@ -60,11 +63,20 @@ class BackupGUI:
 
         ttk.Label(auth_frame, text="Apple ID:").grid(row=0, column=0, sticky=tk.W, **padding)
         ttk.Entry(auth_frame, textvariable=self.apple_id_var, width=30).grid(row=0, column=1, **padding)
-        ttk.Label(auth_frame, text="2FA Kodu:").grid(row=0, column=2, sticky=tk.W, **padding)
-        ttk.Entry(auth_frame, textvariable=self.code_var, width=10).grid(row=0, column=3, **padding)
-        ttk.Button(auth_frame, text="Giriş Yap", command=self.on_login).grid(row=0, column=4, **padding)
+        ttk.Label(auth_frame, text="Parola:").grid(row=0, column=2, sticky=tk.W, **padding)
+        ttk.Entry(auth_frame, textvariable=self.password_var, width=20, show="*").grid(row=0, column=3, **padding)
+        self.request_code_button = ttk.Button(auth_frame, text="Gönder", command=self.on_request_code)
+        self.request_code_button.grid(row=0, column=4, sticky=tk.W, **padding)
+
+        ttk.Label(auth_frame, text="2FA Kodu:").grid(row=1, column=0, sticky=tk.W, **padding)
+        self.code_entry = ttk.Entry(auth_frame, textvariable=self.code_var, width=15)
+        self.code_entry.grid(row=1, column=1, sticky=tk.W, **padding)
+        self.verify_button = ttk.Button(auth_frame, text="2FA Doğrula", command=self.on_verify_2fa)
+        self.verify_button.grid(row=1, column=2, sticky=tk.W, **padding)
 
         auth_frame.columnconfigure(1, weight=1)
+        auth_frame.columnconfigure(3, weight=1)
+        self._set_2fa_state(False)
 
         backup_frame = ttk.LabelFrame(self.root, text="Yedekler")
         backup_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
@@ -132,6 +144,16 @@ class BackupGUI:
     # ------------------------------------------------------------------
     # Utility methods
     # ------------------------------------------------------------------
+    def _set_2fa_state(self, enabled: bool) -> None:
+        self._awaiting_2fa = enabled
+        if enabled:
+            self.code_entry.state(["!disabled"])
+            self.verify_button.state(["!disabled"])
+        else:
+            self.code_entry.state(["disabled"])
+            self.verify_button.state(["disabled"])
+            self.code_var.set("")
+
     def log(self, message: str) -> None:
         def append() -> None:
             self.log_text.configure(state="normal")
@@ -144,7 +166,10 @@ class BackupGUI:
 
     def handle_error(self, error: Exception) -> None:
         self.log(f"Hata: {error}")
-        messagebox.showerror("Hata", str(error))
+        if isinstance(error, PermissionError):
+            messagebox.showwarning("Politika engeli", str(error))
+        else:
+            messagebox.showerror("Hata", str(error))
 
     def run_async(self, worker, on_success=None) -> None:
         def target() -> None:
@@ -185,22 +210,55 @@ class BackupGUI:
     # ------------------------------------------------------------------
     # Command callbacks
     # ------------------------------------------------------------------
-    def on_login(self) -> None:
+    def on_request_code(self) -> None:
         apple_id = self.apple_id_var.get().strip()
         if not apple_id:
             messagebox.showwarning("Eksik bilgi", "Apple ID girin")
             return
-        code = self.code_var.get().strip()
-        if not code:
-            code = simpledialog.askstring("2FA", "2FA kodunu girin:", parent=self.root)
-            if not code:
+        password = self.password_var.get()
+        if not password:
+            password = simpledialog.askstring("Parola", "Apple ID parolasını girin:", show="*", parent=self.root)
+            if not password:
                 return
+            self.password_var.set(password)
 
         def worker():
             orchestrator = self._get_orchestrator()
-            return orchestrator.ensure_session(apple_id=apple_id, two_factor_code=code)
+            return orchestrator.start_login(apple_id=apple_id, password=password)
+
+        def on_success(state):
+            if state.session:
+                self._set_2fa_state(False)
+                self.log(f"{state.session.apple_id} için mevcut oturum bulundu.")
+                messagebox.showinfo("Oturum", f"Zaten güvenilen oturum var. Belirteç: {state.session.session_token}")
+                return
+            if not state.requires_two_factor:
+                self._set_2fa_state(False)
+                self.log("Giriş tamamlandı, 2FA gerekmedi.")
+                messagebox.showinfo("Giriş", "Giriş tamamlandı.")
+                return
+            self._set_2fa_state(True)
+            self.log("2FA kodu gönderildi. Cihazınıza gelen kodu girin.")
+            messagebox.showinfo("2FA Gerekli", "Lütfen cihazınıza gönderilen 2FA kodunu girin.")
+            self.code_entry.focus_set()
+
+        self.run_async(worker, on_success)
+
+    def on_verify_2fa(self) -> None:
+        if not self._awaiting_2fa:
+            messagebox.showinfo("Bilgi", "Önce Apple ID ve parolanızla giriş yapın.")
+            return
+        code = self.code_var.get().strip()
+        if not code:
+            messagebox.showwarning("Eksik bilgi", "2FA kodunu girin")
+            return
+
+        def worker():
+            orchestrator = self._get_orchestrator()
+            return orchestrator.complete_two_factor(code)
 
         def on_success(session):
+            self._set_2fa_state(False)
             self.log(f"{session.apple_id} için güvenilen oturum oluşturuldu.")
             messagebox.showinfo("Başarılı", f"Oturum belirteci: {session.session_token}")
 

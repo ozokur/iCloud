@@ -6,6 +6,10 @@ from pathlib import Path
 from typing import Iterable, List, Optional, Protocol
 
 
+class AuthenticationError(Exception):
+    """Raised when authentication data is invalid or credentials are rejected."""
+
+
 @dataclass
 class Session:
     """Represents an authenticated iCloud session."""
@@ -18,7 +22,7 @@ class Session:
 class AuthAgent(Protocol):
     """Authentication agent interface."""
 
-    def login(self, apple_id: str) -> dict:
+    def login(self, apple_id: str, password: str) -> dict:
         ...
 
     def submit_2fa(self, code: str) -> Session:

@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 from pathlib import Path
 from typing import Optional
 
-from .agents.auth_agent import LocalAuthAgent
+from . import __version__
+from .agents.auth_agent import ICloudPyAuthAgent
 from .agents.backup_indexer import BackupIndexer
 from .agents.crypto_agent import HashVerifier
 from .agents.download_manager import LocalDownloadManager
@@ -32,7 +34,7 @@ def build_orchestrator(allow_private: bool, data_file: Path) -> Orchestrator:
     integrity = JsonlIntegrityLog(log_file=DEFAULT_LOG_FILE)
     reporter = JsonReportAgent(reports_dir=DEFAULT_REPORT_DIR)
     orchestrator = Orchestrator(
-        auth=LocalAuthAgent(),
+        auth=ICloudPyAuthAgent(),
         api=api,
         indexer=indexer,
         downloader=downloader,
@@ -46,12 +48,21 @@ def build_orchestrator(allow_private: bool, data_file: Path) -> Orchestrator:
 
 
 def cmd_auth_login(orchestrator: Orchestrator, args: argparse.Namespace) -> None:
-    session = orchestrator.ensure_session(apple_id=args.apple_id, two_factor_code=args.code)
+    password = args.password or getpass.getpass("Apple ID password: ")
+    session = orchestrator.ensure_session(
+        apple_id=args.apple_id,
+        password=password,
+        two_factor_code=args.code,
+    )
     print(f"Trusted session for {session.apple_id} (token: {session.session_token})")
 
 
 def cmd_backup_list(orchestrator: Orchestrator, args: argparse.Namespace) -> None:
-    backups = orchestrator.list_backups()
+    try:
+        backups = orchestrator.list_backups()
+    except PermissionError as exc:
+        print(str(exc))
+        return
     if not backups:
         print("No backups available under current policy.")
         return
@@ -60,13 +71,21 @@ def cmd_backup_list(orchestrator: Orchestrator, args: argparse.Namespace) -> Non
 
 
 def cmd_backup_plan(orchestrator: Orchestrator, args: argparse.Namespace) -> None:
-    device_name, total_files, total_bytes = orchestrator.plan(args.id, Path(args.dest))
+    try:
+        device_name, total_files, total_bytes = orchestrator.plan(args.id, Path(args.dest))
+    except PermissionError as exc:
+        print(str(exc))
+        return
     print(f"Backup {args.id} ({device_name}) -> {total_files} files, {total_bytes} bytes")
 
 
 def cmd_backup_download(orchestrator: Orchestrator, args: argparse.Namespace) -> None:
     destination = Path(args.dest)
-    plan, result, verification, report = orchestrator.download(args.id, destination)
+    try:
+        plan, result, verification, report = orchestrator.download(args.id, destination)
+    except PermissionError as exc:
+        print(str(exc))
+        return
     print(f"Downloaded {result.downloaded_files}/{plan.total_files} files to {destination}")
     print(f"Verification {'OK' if verification.ok else 'FAILED'}")
     print(f"Report saved to {report}")
@@ -75,6 +94,7 @@ def cmd_backup_download(orchestrator: Orchestrator, args: argparse.Namespace) ->
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="iCloud backup helper (mock implementation)")
     parser.add_argument("--data-file", default=DEFAULT_DATA_FILE, type=Path, help="Mock data JSON path")
+    parser.add_argument("--version", "-V", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument(
         "--allow-private",
         action="store_true",
@@ -86,6 +106,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     auth_login = subparsers.add_parser("auth-login", help="Authenticate with Apple ID")
     auth_login.add_argument("--apple-id", required=True)
+    auth_login.add_argument("--password", required=False, help="Apple ID password (prompted if omitted)")
     auth_login.add_argument("--code", required=False, help="2FA code (otherwise prompted)")
     auth_login.set_defaults(func=cmd_auth_login)
 
