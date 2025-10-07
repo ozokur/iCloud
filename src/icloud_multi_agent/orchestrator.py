@@ -5,7 +5,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from .agents import AuthAgent, DownloadManager, ICloudAPI, IntegrityLog, ReportAgent, Session, StorageManager, Verifier
+from .agents import (
+    AuthAgent,
+    DownloadManager,
+    ICloudAPI,
+    IntegrityLog,
+    ReportAgent,
+    Session,
+    StorageManager,
+    Verifier,
+)
 from .agents.backup_indexer import BackupIndexer
 from .policy import PolicyGate
 
@@ -22,28 +31,52 @@ class Orchestrator:
     reporter: ReportAgent
     policy: PolicyGate
 
+    @dataclass
+    class LoginState:
+        """Represents the progress of a login attempt."""
+
+        requires_two_factor: bool
+        session: Optional[Session] = None
+
+    def start_login(self, apple_id: Optional[str], password: Optional[str]) -> "Orchestrator.LoginState":
+        """Kick off the login flow up to the point where 2FA is required."""
+
+        existing = self.auth.load_session()
+        if existing:
+            return Orchestrator.LoginState(requires_two_factor=False, session=existing)
+        if not apple_id:
+            raise ValueError("Apple ID must be provided when starting a new session")
+        if not password:
+            raise ValueError("Password must be provided when starting a new session")
+        login_result = self.auth.login(apple_id, password)
+        requires_two_factor = bool(login_result.get("requires2FA"))
+        if not requires_two_factor:
+            raise RuntimeError("Unexpected login flow; mock implementation always requires 2FA")
+        self.integrity_log.record("auth_login", apple_id=apple_id, requires_2fa=requires_two_factor)
+        return Orchestrator.LoginState(requires_two_factor=True)
+
+    def complete_two_factor(self, code: Optional[str]) -> Session:
+        """Complete the login flow once a 2FA code has been provided."""
+
+        if not code:
+            raise ValueError("A 2FA code must be provided to complete login")
+        session = self.auth.submit_2fa(code)
+        self.integrity_log.record("auth", status="trusted" if session.trusted else "untrusted")
+        for capability in self.policy.describe_capabilities():
+            self.integrity_log.record("policy", capability=capability)
+        return session
+
     def ensure_session(
         self,
         apple_id: Optional[str],
         password: Optional[str] = None,
         two_factor_code: Optional[str] = None,
     ) -> Session:
-        session = self.auth.load_session()
-        if session:
-            return session
-        if not apple_id:
-            raise ValueError("Apple ID must be provided when no trusted session exists")
-        if not password:
-            raise ValueError("Password must be provided when no trusted session exists")
-        login_result = self.auth.login(apple_id, password)
-        if not login_result.get("requires2FA"):
-            raise RuntimeError("Unexpected login flow; mock implementation always requires 2FA")
+        state = self.start_login(apple_id, password)
+        if state.session:
+            return state.session
         code = two_factor_code or input("Enter 2FA code: ")
-        session = self.auth.submit_2fa(code)
-        self.integrity_log.record("auth", status="trusted" if session.trusted else "untrusted")
-        for capability in self.policy.describe_capabilities():
-            self.integrity_log.record("policy", capability=capability)
-        return session
+        return self.complete_two_factor(code)
 
     def list_backups(self) -> list[tuple[str, str, str, int]]:
         backups = self.indexer.list_backups()
