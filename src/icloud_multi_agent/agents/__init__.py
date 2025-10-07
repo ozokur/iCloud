@@ -6,6 +6,10 @@ from pathlib import Path
 from typing import Iterable, List, Optional, Protocol
 
 
+class AuthenticationError(Exception):
+    """Raised when authentication data is invalid or credentials are rejected."""
+
+
 @dataclass
 class Session:
     """Represents an authenticated iCloud session."""

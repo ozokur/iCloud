@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.2] - 2024-05-31
+### Added
+- Mock kimlik doğrulama deposuna yanlış Apple ID/parola girişlerini yakalayan denetimler ve kullanıcıya açık geri bildirimler.
+- Başarısız giriş ve 2FA denemeleri için JSONL günlüklemeye detaylı kayıtlar.
+
+### Changed
+- GUI hata işleme akışına sahte oturum deposu denetimleri eklendi; yanlış kimlik bilgilerinde durum günlüğe yansıtılır.
+
 ## [0.1.1] - 2024-05-30
 ### Added
 - Introduced a two aşamalı (two-step) GUI kimlik doğrulama akışı; Apple ID ve parola girildikten sonra "Gönder" ile 2FA kodu talep edilir ve ayrı bir doğrulama düğmesi ile tamamlanır.

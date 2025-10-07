@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 from .agents import (
+    AuthenticationError,
     AuthAgent,
     DownloadManager,
     ICloudAPI,
@@ -43,12 +44,23 @@ class Orchestrator:
 
         existing = self.auth.load_session()
         if existing:
+            self.integrity_log.record(
+                "auth_session_restored", apple_id=existing.apple_id, trusted=existing.trusted
+            )
             return Orchestrator.LoginState(requires_two_factor=False, session=existing)
         if not apple_id:
             raise ValueError("Apple ID must be provided when starting a new session")
         if not password:
             raise ValueError("Password must be provided when starting a new session")
-        login_result = self.auth.login(apple_id, password)
+        self.integrity_log.record("auth_login_attempt", apple_id=apple_id)
+        try:
+            login_result = self.auth.login(apple_id, password)
+        except AuthenticationError as exc:
+            self.integrity_log.record("auth_login_failed", apple_id=apple_id, reason=str(exc))
+            raise
+        except Exception as exc:  # pragma: no cover - unexpected failure path
+            self.integrity_log.record("auth_login_error", apple_id=apple_id, error=str(exc))
+            raise
         requires_two_factor = bool(login_result.get("requires2FA"))
         if not requires_two_factor:
             raise RuntimeError("Unexpected login flow; mock implementation always requires 2FA")
@@ -60,7 +72,15 @@ class Orchestrator:
 
         if not code:
             raise ValueError("A 2FA code must be provided to complete login")
-        session = self.auth.submit_2fa(code)
+        self.integrity_log.record("auth_2fa_attempt")
+        try:
+            session = self.auth.submit_2fa(code)
+        except AuthenticationError as exc:
+            self.integrity_log.record("auth_2fa_failed", reason=str(exc))
+            raise
+        except Exception as exc:  # pragma: no cover - unexpected failure path
+            self.integrity_log.record("auth_2fa_error", error=str(exc))
+            raise
         self.integrity_log.record("auth", status="trusted" if session.trusted else "untrusted")
         for capability in self.policy.describe_capabilities():
             self.integrity_log.record("policy", capability=capability)
