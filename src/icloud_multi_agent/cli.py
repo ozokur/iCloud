@@ -16,7 +16,7 @@ from .agents.report_agent import JsonReportAgent
 from .agents.storage_manager import DiskStorageManager
 from .config import SETTINGS
 from .orchestrator import Orchestrator
-from .policy import PolicyGate
+from .policy import PolicyGate, PolicyViolation
 
 DEFAULT_DATA_FILE = Path("data/mock_icloud.json")
 DEFAULT_LOG_FILE = Path("outputs/logs/session.jsonl")
@@ -59,7 +59,15 @@ def cmd_auth_login(orchestrator: Orchestrator, args: argparse.Namespace) -> None
 
 
 def cmd_backup_list(orchestrator: Orchestrator, args: argparse.Namespace) -> None:
-    backups = orchestrator.list_backups()
+    try:
+        backups = orchestrator.list_backups()
+    except PolicyViolation:
+        print(
+            "Private iCloud backup endpoints are disabled. "
+            "Run again with --allow-private or set ALLOW_PRIVATE_ENDPOINTS=true after acknowledging the risk.",
+            flush=True,
+        )
+        return
     if not backups:
         print("No backups available under current policy.")
         return
@@ -68,13 +76,29 @@ def cmd_backup_list(orchestrator: Orchestrator, args: argparse.Namespace) -> Non
 
 
 def cmd_backup_plan(orchestrator: Orchestrator, args: argparse.Namespace) -> None:
-    device_name, total_files, total_bytes = orchestrator.plan(args.id, Path(args.dest))
+    try:
+        device_name, total_files, total_bytes = orchestrator.plan(args.id, Path(args.dest))
+    except PolicyViolation:
+        print(
+            "Private iCloud backup endpoints are disabled. "
+            "Run again with --allow-private or set ALLOW_PRIVATE_ENDPOINTS=true after acknowledging the risk.",
+            flush=True,
+        )
+        return
     print(f"Backup {args.id} ({device_name}) -> {total_files} files, {total_bytes} bytes")
 
 
 def cmd_backup_download(orchestrator: Orchestrator, args: argparse.Namespace) -> None:
     destination = Path(args.dest)
-    plan, result, verification, report = orchestrator.download(args.id, destination)
+    try:
+        plan, result, verification, report = orchestrator.download(args.id, destination)
+    except PolicyViolation:
+        print(
+            "Private iCloud backup endpoints are disabled. "
+            "Run again with --allow-private or set ALLOW_PRIVATE_ENDPOINTS=true after acknowledging the risk.",
+            flush=True,
+        )
+        return
     print(f"Downloaded {result.downloaded_files}/{plan.total_files} files to {destination}")
     print(f"Verification {'OK' if verification.ok else 'FAILED'}")
     print(f"Report saved to {report}")
