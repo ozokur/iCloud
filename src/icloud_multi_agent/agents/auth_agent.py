@@ -29,6 +29,13 @@ class LocalAuthAgent:
 
     def submit_2fa(self, code: str) -> Session:
         # Fake 2FA success and store a trusted session token.
+        normalized = code.strip()
+        if len(normalized) != 6 or not normalized.isdigit():
+            # Temiz bir durumla çıkmak için oturum dosyasını sil.
+            if self.session_file.exists():
+                self.session_file.unlink()
+            raise ValueError("Geçersiz 2FA kodu girildi, işlem sonlandırılıyor")
+
         data = json.loads(self.session_file.read_text())
         session = Session(apple_id=data["apple_id"], session_token="mock-token", trusted=True)
         self.session_file.write_text(
