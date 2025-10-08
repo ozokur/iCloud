@@ -7,6 +7,15 @@ if [[ "$(uname)" != "Darwin" ]]; then
 fi
 
 export PIP_DISABLE_PIP_VERSION_CHECK=1
+VERBOSE=${VERBOSE:-0}
+
+# Parse command line args for verbose mode
+for arg in "$@"; do
+  if [[ "$arg" == "--verbose" || "$arg" == "-v" ]]; then
+    VERBOSE=1
+    echo "[icloud-helper] Verbose mode enabled"
+  fi
+done
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$SCRIPT_DIR"
 VENV_DIR="$PROJECT_ROOT/.venv_macos"
@@ -35,9 +44,42 @@ fi
 
 source "$VENV_DIR/bin/activate"
 
-echo "[icloud-helper] Ensuring dependencies are installed..."
-python -m pip install --upgrade pip setuptools wheel
-python -m pip install -e "$PROJECT_ROOT"
+echo "[icloud-helper] Checking dependencies..."
+
+# Check if icloud-multi-agent is installed and up to date
+INSTALLED_VERSION=$(python -c "from icloud_multi_agent import __version__; print(__version__)" 2>/dev/null || echo "none")
+PROJECT_VERSION=$(grep "^version = " "$PROJECT_ROOT/pyproject.toml" | cut -d'"' -f2)
+
+if [[ "$INSTALLED_VERSION" != "$PROJECT_VERSION" ]]; then
+  echo "  → Version mismatch (installed: $INSTALLED_VERSION, expected: $PROJECT_VERSION)"
+  echo "  → Updating dependencies (this may take 30-60 seconds on first run)..."
+  
+  if [[ $VERBOSE -eq 1 ]]; then
+    python -m pip install --upgrade pip setuptools wheel --timeout 60 || {
+      echo "  ⚠️  Warning: pip upgrade failed, continuing anyway..."
+    }
+    echo "  → Installing icloud-multi-agent and icloudpy..."
+    python -m pip install -e "$PROJECT_ROOT" --timeout 120 || {
+      echo "  ❌ Error: Installation failed. Check your internet connection."
+      read -r -p "Press Enter to close..." _
+      exit 1
+    }
+  else
+    python -m pip install --upgrade pip setuptools wheel --timeout 60 --quiet || {
+      echo "  ⚠️  Warning: pip upgrade failed, continuing anyway..."
+    }
+    echo "  → Installing icloud-multi-agent and icloudpy..."
+    python -m pip install -e "$PROJECT_ROOT" --timeout 120 --quiet || {
+      echo "  ❌ Error: Installation failed. Check your internet connection."
+      read -r -p "Press Enter to close..." _
+      exit 1
+    }
+  fi
+  
+  echo "  ✅ Updated to version $PROJECT_VERSION"
+else
+  echo "  ✅ Already up to date (v$INSTALLED_VERSION)"
+fi
 
 echo "[icloud-helper] Launching GUI..."
 python -m icloud_multi_agent.gui "$@"

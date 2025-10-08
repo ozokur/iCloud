@@ -9,16 +9,22 @@ All notable changes to this project will be documented in this file.
 - CLI'de daha kullanıcı dostu ve emoji'li mesajlar (başarı ✅, hata ❌, uyarı ⚠️).
 - CLI komutlarına detaylı ipuçları ve örnek kullanım senaryoları eklendi.
 - README'ye "Sık Karşılaşılan Sorunlar ve Çözümleri" bölümü eklendi.
+- macOS launcher'a akıllı versiyon kontrolü - sadece gerektiğinde güncelleme yapar.
+- macOS launcher'a timeout koruması (pip upgrade: 60s, dependencies: 120s).
+- macOS launcher'a verbose mod desteği (`VERBOSE=1`).
+- macOS launcher'a detaylı progress mesajları ve hata yönetimi.
 
 ### Changed
 - `allow_private_endpoints` varsayılan değeri `true` olarak değiştirildi (ortam değişkeni ile değiştirilebilir).
 - CLI çıktıları daha okunabilir formatlandı (boyutlar MB/GB, dosya sayıları formatlı).
 - Hata mesajları Türkçe olarak iyileştirildi ve kullanıcıya yol gösterici hale getirildi.
+- macOS launcher artık her seferinde pip install yapmak yerine versiyon kontrolü yapıyor.
 
 ### Fixed
 - Backup listesi görüntüleme sorunu - Kullanıcılar artık iCloud backup'larını kolayca görebiliyor.
 - Auth sonrası manuel yenileme gerekmemesi - Otomatik yenileme eklendi.
 - Yetersiz bilgilendirme sorunu - Her adımda kullanıcı bilgilendiriliyor.
+- macOS launcher'ın "Ensuring dependencies" adımında takılma sorunu - timeout ve progress mesajları eklendi.
 
 ## [0.3.1] - 2025-10-10
 ### Fixed
