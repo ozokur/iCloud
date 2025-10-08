@@ -103,8 +103,9 @@ python -m icloud_multi_agent.cli --allow-private \
 ## Extending to Real Sources
 
 - The `CloudBackupICloudAPI` adapter relies on icloudpy to talk to Apple's private backup listing
-  endpoint. It intentionally stops short of downloading those snapshots, but you can inspect the
-  parsing logic in `agents/icloud_api_agent.py` to experiment with alternative data sources.
+  endpoint. Oturum açıldıktan sonra hangi MobileBackup URL'si dönerse dönsün otomatik olarak onu
+  hedefler. İndirme tarafı hâlâ devre dışı, ancak `agents/icloud_api_agent.py` içindeki analiz
+  kodunu inceleyerek yeni veri kaynaklarıyla deney yapabilirsiniz.
 - The `MobileSyncICloudAPI` adapter enumerates Finder/iTunes USB backups when private endpoints
   are allowed. You can add additional adapters (for example, to integrate with approved cloud
   storage) by following the same pattern.

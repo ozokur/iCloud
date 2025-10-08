@@ -382,32 +382,81 @@ class CloudBackupICloudAPI(ICloudAPI):
     # ------------------------------------------------------------------
     # Cloud backup helpers
     # ------------------------------------------------------------------
+    def _backup_service_urls(self, service: Any) -> List[str]:
+        """Return candidate service URLs for the MobileBackup API."""
+
+        candidates: List[str] = []
+        # 1) Explicit mobilebackup webservice URL announced after authentication.
+        try:
+            url = service._get_webservice_url("mobilebackup")  # type: ignore[attr-defined]
+        except Exception:  # noqa: BLE001 - private helpers raise when unavailable
+            url = None
+        if url:
+            candidates.append(url.rstrip("/"))
+
+        # 2) Direct entry under the session bootstrap payload (older icloudpy).
+        try:
+            mobilebackup = (
+                getattr(service, "data", {})
+                .get("webservices", {})
+                .get("mobilebackup", {})
+            )
+            url = mobilebackup.get("url") if isinstance(mobilebackup, dict) else None
+        except Exception:  # noqa: BLE001 - guard against unexpected shapes
+            url = None
+        if url:
+            url = str(url).rstrip("/")
+            if url not in candidates:
+                candidates.append(url)
+
+        # 3) Fallback to the generic setup endpoint used by legacy flows.
+        setup_endpoint = getattr(service, "setup_endpoint", "")
+        if setup_endpoint:
+            candidates.append(f"{setup_endpoint.rstrip('/')}/backup")
+        return candidates
+
     def _fetch_payload(self) -> dict:
         service = self.auth.require_authenticated_service()
-        url = f"{service.setup_endpoint}/backup/list"
+
+        # Some accounts require a scoped re-auth for private services before the
+        # dedicated endpoint can be called. We try to refresh quietly while
+        # keeping failures non-fatal (the generic setup endpoint still works in
+        # that case).
+        try:
+            service.authenticate(service="mobilebackup")  # type: ignore[attr-defined]
+        except Exception as exc:  # noqa: BLE001 - best-effort hint, fall back silently
+            _LOGGER.debug("MobileBackup auth refresh failed: %s", exc, exc_info=exc)
+
         params = getattr(service, "params", {})
         errors: list[Exception] = []
-        for method in ("post", "get"):
-            try:
-                response = getattr(service.session, method)(
-                    url,
-                    params=params,
-                    json={} if method == "post" else None,
-                )
-                response.raise_for_status()
-                return response.json()
-            except requests.HTTPError as exc:
-                status = exc.response.status_code if exc.response is not None else None
-                if status in {401, 403}:
-                    raise AuthenticationError(
-                        "iCloud oturumu süresi dolmuş görünüyor. Lütfen tekrar giriş yapın."
-                    ) from exc
-                errors.append(exc)
-            except Exception as exc:  # noqa: BLE001 - defensive parsing for private APIs
-                errors.append(exc)
-        if errors:
-            last = errors[-1]
-            _LOGGER.debug("Failed to fetch iCloud backup list: %s", last, exc_info=last)
+        for base_url in self._backup_service_urls(service):
+            for path in ("list", "listDevices", "listBackups"):
+                url = f"{base_url}/{path}"
+                for method in ("post", "get"):
+                    try:
+                        kwargs: dict[str, Any] = {"params": params}
+                        if method == "post":
+                            kwargs["json"] = {}
+                            kwargs.setdefault("headers", {})
+                            kwargs["headers"].setdefault("Content-Type", "application/json")
+                        response = getattr(service.session, method)(url, **kwargs)
+                        response.raise_for_status()
+                        data = response.json()
+                        if isinstance(data, (dict, list)):
+                            return data
+                    except requests.HTTPError as exc:
+                        status = exc.response.status_code if exc.response is not None else None
+                        if status in {401, 403}:
+                            raise AuthenticationError(
+                                "iCloud oturumu süresi dolmuş görünüyor. Lütfen tekrar giriş yapın."
+                            ) from exc
+                        errors.append(exc)
+                    except Exception as exc:  # noqa: BLE001 - defensive parsing for private APIs
+                        errors.append(exc)
+            if errors:
+                # Only log the most recent failure per base URL to avoid noisy output.
+                _LOGGER.debug("Backup endpoint %s failed: %s", base_url, errors[-1], exc_info=errors[-1])
+                errors.clear()
         return {}
 
     def _iter_backups(self, payload: Any) -> Iterator[tuple[dict, dict]]:

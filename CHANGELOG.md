@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.1] - 2025-10-10
+### Fixed
+- Bulut yedekleri için MobileBackup uç noktası keşfi genişletildi; iCloud hesabı hangi URL'yi döndürürse döndürsün listeleme
+  isteği doğru adrese yönlendiriliyor.
+- Özel MobileBackup servisi için gerektiğinde sessizce yeniden kimlik doğrulama denemesi yapılarak oturum süresi dolmuş
+  oturumların "yedek yok" şeklinde algılanması engellendi.
+
 ## [0.3.0] - 2025-10-09
 ### Added
 - `CloudBackupICloudAPI` ile Apple'ın özel yedek listeleme uç noktasına bağlanarak gerçek iCloud cihaz

@@ -1,6 +1,6 @@
 [project]
 name = "icloud-multi-agent"
-version = "0.3.0"
+version = "0.3.1"
 description = "Mock multi-agent helper for exploring iCloud backup download workflows"
 authors = [{name = "OpenAI Codex"}]
 requires-python = ">=3.11"
