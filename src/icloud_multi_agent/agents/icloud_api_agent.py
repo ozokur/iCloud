@@ -1,16 +1,22 @@
-"""Simplified iCloud API agent with mock and local backup sources."""
+"""Simplified iCloud API agent with mock, local and cloud backup sources."""
 from __future__ import annotations
 
 import json
+import logging
 import os
 import plistlib
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Iterable, Iterator, List, Sequence, Tuple
+from typing import Any, Dict, Iterable, Iterator, List, Sequence, Tuple
+
+import requests
 
 from ..policy import PolicyGate
-from . import BackupMeta, DownloadItem, DownloadPlan, ICloudAPI
+from . import AuthenticationError, BackupMeta, DownloadItem, DownloadPlan, ICloudAPI
+from .auth_agent import ICloudPyAuthAgent
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -269,3 +275,288 @@ class MobileSyncICloudAPI(ICloudAPI):
             total_bytes=total_bytes,
             items=items,
         )
+
+
+def _normalise_timestamp(value: object) -> str:
+    """Best-effort conversion of various timestamp formats to ISO strings."""
+
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        cleaned = value.strip()
+        if not cleaned:
+            return ""
+        try:
+            # Allow `Z` suffix while keeping timezone info.
+            candidate = cleaned.replace("Z", "+00:00")
+            return datetime.fromisoformat(candidate).isoformat()
+        except ValueError:
+            if cleaned.isdigit():
+                value = int(cleaned)
+            else:
+                return cleaned
+    if isinstance(value, (int, float)):
+        try:
+            seconds = float(value)
+        except (TypeError, ValueError):
+            return str(value)
+        if seconds > 1_000_000_000_000:  # Assume milliseconds
+            seconds /= 1000.0
+        try:
+            return datetime.fromtimestamp(seconds, tz=timezone.utc).isoformat()
+        except (OverflowError, OSError, ValueError):
+            return str(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return str(value)
+
+
+def _parse_int(value: object) -> int:
+    try:
+        if value is None:
+            return 0
+        if isinstance(value, (int, float)):
+            return int(value)
+        cleaned = str(value).strip()
+        if not cleaned:
+            return 0
+        return int(float(cleaned))
+    except (ValueError, TypeError):
+        return 0
+
+
+def _maybe_snapshot(node: dict) -> bool:
+    keys = {key.lower() for key in node.keys()}
+    return any(key in keys for key in {"snapshotid", "snapshotuuid", "snapshotguid"})
+
+
+def _contains_snapshots(node: dict) -> bool:
+    for key in ("snapshots", "snapshotList", "snapshotInfos", "snapshotInfoList"):
+        value = node.get(key)
+        if isinstance(value, list) and value:
+            return True
+    return False
+
+
+def _device_identifier_from(node: dict) -> str:
+    for key in ("backupUDID", "backupUUID", "uniqueIdentifier", "udid", "deviceID", "deviceUdid"):
+        value = node.get(key) or node.get(key.lower())
+        if value:
+            return str(value)
+    return ""
+
+
+def _device_name_from(node: dict) -> str:
+    for key in (
+        "deviceName",
+        "deviceDisplayName",
+        "name",
+        "displayName",
+        "productName",
+        "modelDisplayName",
+    ):
+        value = node.get(key)
+        if value:
+            return str(value)
+    return ""
+
+
+@dataclass
+class CloudBackupICloudAPI(ICloudAPI):
+    """Adapter that queries Apple's private backup endpoints via icloudpy."""
+
+    auth: ICloudPyAuthAgent
+    policy: PolicyGate
+    fallback: ICloudAPI | None = None
+
+    def list_photos(self) -> Iterable[str]:
+        if self.fallback is not None:
+            return self.fallback.list_photos()
+        return []
+
+    def list_drive_items(self) -> Iterable[str]:
+        if self.fallback is not None:
+            return self.fallback.list_drive_items()
+        return []
+
+    # ------------------------------------------------------------------
+    # Cloud backup helpers
+    # ------------------------------------------------------------------
+    def _fetch_payload(self) -> dict:
+        service = self.auth.require_authenticated_service()
+        url = f"{service.setup_endpoint}/backup/list"
+        params = getattr(service, "params", {})
+        errors: list[Exception] = []
+        for method in ("post", "get"):
+            try:
+                response = getattr(service.session, method)(
+                    url,
+                    params=params,
+                    json={} if method == "post" else None,
+                )
+                response.raise_for_status()
+                return response.json()
+            except requests.HTTPError as exc:
+                status = exc.response.status_code if exc.response is not None else None
+                if status in {401, 403}:
+                    raise AuthenticationError(
+                        "iCloud oturumu süresi dolmuş görünüyor. Lütfen tekrar giriş yapın."
+                    ) from exc
+                errors.append(exc)
+            except Exception as exc:  # noqa: BLE001 - defensive parsing for private APIs
+                errors.append(exc)
+        if errors:
+            last = errors[-1]
+            _LOGGER.debug("Failed to fetch iCloud backup list: %s", last, exc_info=last)
+        return {}
+
+    def _iter_backups(self, payload: Any) -> Iterator[tuple[dict, dict]]:
+        stack: list[tuple[Any, dict]] = [(payload, {})]
+        while stack:
+            node, context = stack.pop()
+            if isinstance(node, dict):
+                device_name = _device_name_from(node)
+                device_identifier = _device_identifier_from(node)
+                new_context = context.copy()
+                if device_name:
+                    new_context.setdefault("device_name", device_name)
+                if device_identifier:
+                    new_context.setdefault("device_identifier", device_identifier)
+                for key in (
+                    "snapshotTimestamp",
+                    "snapshotDate",
+                    "modificationTimestamp",
+                    "modificationTime",
+                    "lastModified",
+                    "lastUpdate",
+                    "lastUpdateTimestamp",
+                    "lastBackupDate",
+                    "date",
+                ):
+                    if key in node and node.get(key) is not None:
+                        new_context.setdefault("last_timestamp", node.get(key))
+                        break
+                for key in (
+                    "sizeInBytes",
+                    "snapshotSize",
+                    "size",
+                    "backupSize",
+                    "storageUsed",
+                    "quotaUsedInBytes",
+                    "bytesUsed",
+                ):
+                    if key in node and node.get(key) is not None:
+                        new_context.setdefault("size", node.get(key))
+                        break
+                if _maybe_snapshot(node):
+                    yield node, new_context
+                elif not _contains_snapshots(node) and device_identifier:
+                    yield node, new_context
+                for value in node.values():
+                    if isinstance(value, (dict, list)):
+                        stack.append((value, new_context))
+            elif isinstance(node, list):
+                for item in node:
+                    stack.append((item, context))
+
+    def _parse_backups(self, payload: Any) -> List[BackupMeta]:
+        metas: Dict[str, BackupMeta] = {}
+        for node, context in self._iter_backups(payload):
+            identifier = None
+            for key in (
+                "snapshotID",
+                "snapshotId",
+                "snapshotUUID",
+                "snapshotGuid",
+                "backupUUID",
+                "backupUDID",
+                "uniqueIdentifier",
+                "udid",
+                "id",
+            ):
+                value = node.get(key)
+                if value:
+                    identifier = str(value)
+                    break
+            if not identifier:
+                identifier = context.get("device_identifier")
+            if not identifier:
+                continue
+            device_name = _device_name_from(node) or context.get("device_name") or "Bilinmeyen Cihaz"
+            timestamp = ""
+            for key in (
+                "snapshotTimestamp",
+                "snapshotDate",
+                "modificationTimestamp",
+                "modificationTime",
+                "lastModified",
+                "lastUpdate",
+                "lastUpdateTimestamp",
+                "lastBackupDate",
+                "date",
+            ):
+                if key in node:
+                    timestamp = _normalise_timestamp(node.get(key))
+                    break
+            if not timestamp:
+                timestamp = _normalise_timestamp(context.get("last_timestamp"))
+            size = 0
+            for key in (
+                "sizeInBytes",
+                "snapshotSize",
+                "size",
+                "backupSize",
+                "storageUsed",
+                "quotaUsedInBytes",
+                "bytesUsed",
+            ):
+                if key in node:
+                    size = _parse_int(node.get(key))
+                    break
+            if not size:
+                size = _parse_int(context.get("size"))
+            metas[identifier] = BackupMeta(
+                identifier=identifier,
+                device_name=device_name,
+                created_at=timestamp,
+                approx_size_bytes=size,
+                source="icloud",
+            )
+        return list(metas.values())
+
+    # ------------------------------------------------------------------
+    # ICloudAPI implementation
+    # ------------------------------------------------------------------
+    def list_device_backups(self) -> List[BackupMeta]:
+        self.policy.require_private_access("device_backups")
+        payload = self._fetch_payload()
+        cloud_backups = self._parse_backups(payload)
+        fallback_backups: List[BackupMeta] = []
+        if self.fallback is not None:
+            try:
+                fallback_backups = self.fallback.list_device_backups()
+            except PermissionError:
+                # Propagate policy errors from fallbacks so they surface correctly.
+                raise
+            except Exception as exc:  # noqa: BLE001 - ignore best-effort fallbacks
+                _LOGGER.debug("Fallback backup discovery failed: %s", exc, exc_info=exc)
+        if not cloud_backups:
+            return fallback_backups
+        merged: Dict[str, BackupMeta] = {backup.identifier: backup for backup in fallback_backups}
+        for backup in cloud_backups:
+            merged[backup.identifier] = backup
+        return list(merged.values())
+
+    def plan_download(self, backup_id: str, destination: Path) -> DownloadPlan:
+        self.policy.require_private_access("device_backups")
+        payload = self._fetch_payload()
+        cloud_backups = self._parse_backups(payload)
+        cloud_ids = {backup.identifier for backup in cloud_backups}
+        if backup_id in cloud_ids:
+            raise NotImplementedError(
+                "iCloud bulut yedekleri için doğrudan indirme henüz desteklenmiyor. "
+                "Lütfen Finder/iTunes (MobileSync) yedeklerini kullanın."
+            )
+        if self.fallback is None:
+            raise FileNotFoundError(f"Backup {backup_id} not available in fallbacks")
+        return self.fallback.plan_download(backup_id, destination)

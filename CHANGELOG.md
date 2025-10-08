@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2025-10-09
+### Added
+- `CloudBackupICloudAPI` ile Apple'ın özel yedek listeleme uç noktasına bağlanarak gerçek iCloud cihaz
+  yedeklerini GUI ve CLI üzerinden gösterme desteği.
+- `backup-list`, `backup-plan` ve `backup-download` komutlarına Apple ID/şifre/2FA parametreleri eklenerek
+  oturum yenilemesinin tek adımda yapılabilmesi.
+
+### Changed
+- README güncellendi; iCloud bulut yedeklerinin nasıl listelendiği ve neden indirilemediği açıklığa kavuşturuldu.
+
+### Fixed
+- MobileSync dizini bulunamadığında mock veriye düşmek yerine bulut listesini önceliklendirerek "iCloud'da yedek yok" algısını ortadan kaldırma.
+
 ## [0.2.1] - 2025-10-08
 ### Fixed
 - "Yedekleri listele" isteği politika nedeniyle engellendiğinde CLI ve GUI'de kullanıcıya açık rehberlik sağlayan hata mesajları eklendi.
