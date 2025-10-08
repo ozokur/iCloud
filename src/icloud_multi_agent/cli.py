@@ -11,7 +11,7 @@ from .agents.auth_agent import ICloudPyAuthAgent
 from .agents.backup_indexer import BackupIndexer
 from .agents.crypto_agent import HashVerifier
 from .agents.download_manager import LocalDownloadManager
-from .agents.icloud_api_agent import MockICloudAPI
+from .agents.icloud_api_agent import MobileSyncICloudAPI, MockICloudAPI
 from .agents.integrity_log import JsonlIntegrityLog
 from .agents.report_agent import JsonReportAgent
 from .agents.storage_manager import DiskStorageManager
@@ -24,9 +24,14 @@ DEFAULT_LOG_FILE = Path("outputs/logs/session.jsonl")
 DEFAULT_REPORT_DIR = Path("outputs/icloud_backups/reports")
 
 
-def build_orchestrator(allow_private: bool, data_file: Path) -> Orchestrator:
+def build_orchestrator(allow_private: bool, data_file: Path, mobile_sync_dirs: list[Path] | None) -> Orchestrator:
     policy = PolicyGate(allow_private_endpoints=allow_private)
-    api = MockICloudAPI(data_file=data_file, policy=policy)
+    mock_api = MockICloudAPI(data_file=data_file, policy=policy)
+    if allow_private:
+        mobilesync_api = MobileSyncICloudAPI(policy=policy, root_dirs=mobile_sync_dirs, fallback=mock_api)
+        api = mobilesync_api if mobilesync_api.has_any_backups() else mock_api
+    else:
+        api = mock_api
     indexer = BackupIndexer(api=api)
     downloader = LocalDownloadManager()
     verifier = HashVerifier()
@@ -94,6 +99,13 @@ def cmd_backup_download(orchestrator: Orchestrator, args: argparse.Namespace) ->
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="iCloud backup helper (mock implementation)")
     parser.add_argument("--data-file", default=DEFAULT_DATA_FILE, type=Path, help="Mock data JSON path")
+    parser.add_argument(
+        "--mobile-sync-dir",
+        action="append",
+        type=Path,
+        default=[],
+        help="Additional MobileSync backup directory to search (can be repeated)",
+    )
     parser.add_argument("--version", "-V", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument(
         "--allow-private",
@@ -129,7 +141,12 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Optional[list[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    orchestrator = build_orchestrator(allow_private=args.allow_private, data_file=args.data_file)
+    mobile_sync_dirs = args.mobile_sync_dir or None
+    orchestrator = build_orchestrator(
+        allow_private=args.allow_private,
+        data_file=args.data_file,
+        mobile_sync_dirs=mobile_sync_dirs,
+    )
     try:
         args.func(orchestrator, args)
     except Exception as exc:  # noqa: BLE001 - CLI surface should show errors

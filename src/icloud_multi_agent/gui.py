@@ -136,7 +136,11 @@ class BackupGUI:
             )
             if needs_rebuild:
                 self.log("Ajanlar hazırlanıyor...")
-                self._orchestrator = build_orchestrator(allow_private=allow_private, data_file=data_file)
+                self._orchestrator = build_orchestrator(
+                    allow_private=allow_private,
+                    data_file=data_file,
+                    mobile_sync_dirs=None,
+                )
                 self._cached_allow_private = allow_private
                 self._cached_data_file = data_file
         return self._orchestrator

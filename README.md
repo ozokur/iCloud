@@ -56,7 +56,9 @@ the end so you can review any messages or errors before closing.
 # Authenticate (stores a mock session under ~/.icloud_session.json)
 python -m icloud_multi_agent.cli --allow-private auth-login --apple-id user@example.com --code 000000
 
-# List available backups (requires --allow-private)
+# List available backups (requires --allow-private). When Finder/iTunes
+# MobileSync backups are present they will be listed automatically; otherwise
+# the bundled mock data is used as a fallback.
 python -m icloud_multi_agent.cli --allow-private backup-list
 
 # Download the chosen backup into ./outputs/icloud_backups
@@ -69,9 +71,19 @@ The download command will produce:
 - Integrity logs in `outputs/logs/session.jsonl`.
 - A JSON report in `outputs/icloud_backups/reports`.
 
+If your MobileSync backups live in a non-standard directory you can point the CLI at additional
+locations using repeated `--mobile-sync-dir` flags:
+
+```bash
+python -m icloud_multi_agent.cli --allow-private \
+  --mobile-sync-dir "D:/Backups/MobileSync" \
+  backup-list
+```
+
 ## Extending to Real Sources
 
-- Replace `MockICloudAPI` with an adapter that interfaces with an approved source (USB backups,
-  iCloud Drive files, etc.).
+- The `MobileSyncICloudAPI` adapter enumerates Finder/iTunes USB backups when private endpoints
+  are allowed. You can add additional adapters (for example, to integrate with approved cloud
+  storage) by following the same pattern.
 - Implement stronger verification in `HashVerifier`, e.g. by comparing to manifest hashes.
 - Extend the CLI/GUI to integrate with additional storage providers or richer verification flows.
