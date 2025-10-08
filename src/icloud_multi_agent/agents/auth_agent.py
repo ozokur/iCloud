@@ -139,3 +139,21 @@ class ICloudPyAuthAgent:
         # A completely password-less session restoration is not reliable across
         # processes, so for now we always require an explicit login.
         return None
+
+    # ------------------------------------------------------------------
+    # Helpers for other agents
+    # ------------------------------------------------------------------
+    def require_authenticated_service(self) -> ICloudPyService:
+        """Return the active :class:`ICloudPyService` or raise an error.
+
+        Cloud backup discovery relies on the authenticated service instance. The
+        GUI/CLI must complete the login (including 2FA when required) before
+        attempting to list iCloud backups. Raising :class:`AuthenticationError`
+        here keeps the surface consistent with other auth failures.
+        """
+
+        if self._service is None:
+            raise AuthenticationError(
+                "iCloud oturumu bulunamadı. Önce Apple ID ile giriş yapıp 2FA doğrulamasını tamamlayın."
+            )
+        return self._service

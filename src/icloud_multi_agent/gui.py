@@ -136,7 +136,11 @@ class BackupGUI:
             )
             if needs_rebuild:
                 self.log("Ajanlar hazırlanıyor...")
-                self._orchestrator = build_orchestrator(allow_private=allow_private, data_file=data_file)
+                self._orchestrator = build_orchestrator(
+                    allow_private=allow_private,
+                    data_file=data_file,
+                    mobile_sync_dirs=None,
+                )
                 self._cached_allow_private = allow_private
                 self._cached_data_file = data_file
         return self._orchestrator
@@ -176,10 +180,10 @@ class BackupGUI:
             try:
                 result = worker()
             except Exception as exc:  # noqa: BLE001 - kullanıcıya hata gösterilecek
-                self.root.after(0, lambda: self.handle_error(exc))
+                self.root.after(0, lambda exc=exc: self.handle_error(exc))
                 return
             if on_success:
-                self.root.after(0, lambda: on_success(result))
+                self.root.after(0, lambda result=result: on_success(result))
 
         threading.Thread(target=target, daemon=True).start()
 
