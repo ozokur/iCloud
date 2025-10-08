@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.2] - 2025-10-08
+### Added
+- GUI'de kimlik doğrulama başarılı olduktan sonra backup listesinin otomatik olarak yenilenmesi.
+- GUI'de "Yedekleri Yenile" butonuna tıklandığında özel erişim kapalıysa kullanıcıya uyarı ve onay sorma özelliği.
+- CLI'de daha kullanıcı dostu ve emoji'li mesajlar (başarı ✅, hata ❌, uyarı ⚠️).
+- CLI komutlarına detaylı ipuçları ve örnek kullanım senaryoları eklendi.
+- README'ye "Sık Karşılaşılan Sorunlar ve Çözümleri" bölümü eklendi.
+
+### Changed
+- `allow_private_endpoints` varsayılan değeri `true` olarak değiştirildi (ortam değişkeni ile değiştirilebilir).
+- CLI çıktıları daha okunabilir formatlandı (boyutlar MB/GB, dosya sayıları formatlı).
+- Hata mesajları Türkçe olarak iyileştirildi ve kullanıcıya yol gösterici hale getirildi.
+
+### Fixed
+- Backup listesi görüntüleme sorunu - Kullanıcılar artık iCloud backup'larını kolayca görebiliyor.
+- Auth sonrası manuel yenileme gerekmemesi - Otomatik yenileme eklendi.
+- Yetersiz bilgilendirme sorunu - Her adımda kullanıcı bilgilendiriliyor.
+
 ## [0.3.1] - 2025-10-10
 ### Fixed
 - Bulut yedekleri için MobileBackup uç noktası keşfi genişletildi; iCloud hesabı hangi URL'yi döndürürse döndürsün listeleme

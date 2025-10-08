@@ -235,11 +235,15 @@ class BackupGUI:
                 self._set_2fa_state(False)
                 self.log(f"{state.session.apple_id} için mevcut oturum bulundu.")
                 messagebox.showinfo("Oturum", f"Zaten güvenilen oturum var. Belirteç: {state.session.session_token}")
+                # Oturum varsa backup'ları otomatik yenile
+                self.on_refresh_backups()
                 return
             if not state.requires_two_factor:
                 self._set_2fa_state(False)
                 self.log("Giriş tamamlandı, 2FA gerekmedi.")
                 messagebox.showinfo("Giriş", "Giriş tamamlandı.")
+                # Giriş başarılıysa backup'ları otomatik yenile
+                self.on_refresh_backups()
                 return
             self._set_2fa_state(True)
             self.log("2FA kodu gönderildi. Cihazınıza gelen kodu girin.")
@@ -265,10 +269,27 @@ class BackupGUI:
             self._set_2fa_state(False)
             self.log(f"{session.apple_id} için güvenilen oturum oluşturuldu.")
             messagebox.showinfo("Başarılı", f"Oturum belirteci: {session.session_token}")
+            # 2FA başarılıysa backup'ları otomatik yenile
+            self.on_refresh_backups()
 
         self.run_async(worker, on_success)
 
     def on_refresh_backups(self) -> None:
+        # Özel erişim kapalıysa kullanıcıyı uyar
+        if not self.allow_private_var.get():
+            response = messagebox.askyesno(
+                "Özel Erişim Gerekli",
+                "iCloud yedeklerini görmek için 'Özel uç noktalara izin ver' seçeneğini aktifleştirmeniz gerekiyor.\n\n"
+                "⚠️ Uyarı: Bu özellik Apple'ın resmi API'sini değil, özel uç noktalarını kullanır. "
+                "Hesap güvenliği riski olabilir.\n\n"
+                "Devam etmek istiyor musunuz?",
+            )
+            if response:
+                self.allow_private_var.set(True)
+                self._invalidate_orchestrator()
+            else:
+                self.log("Özel erişim olmadan sadece mock veriler gösterilecek.")
+        
         def worker():
             orchestrator = self._get_orchestrator()
             return orchestrator.list_backups()

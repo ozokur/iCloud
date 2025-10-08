@@ -14,7 +14,7 @@ class Settings:
     chunk_size_mb: int = int(os.getenv("CHUNK_SIZE_MB", "16"))
     max_parallel: int = int(os.getenv("MAX_PARALLEL", "4"))
     hash_algo: str = os.getenv("HASH_ALGO", "sha256")
-    allow_private_endpoints: bool = os.getenv("ALLOW_PRIVATE_ENDPOINTS", "false").lower() in {
+    allow_private_endpoints: bool = os.getenv("ALLOW_PRIVATE_ENDPOINTS", "true").lower() in {
         "1",
         "true",
         "yes",

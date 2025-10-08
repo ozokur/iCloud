@@ -77,12 +77,19 @@ def build_orchestrator(allow_private: bool, data_file: Path, mobile_sync_dirs: l
 
 def cmd_auth_login(orchestrator: Orchestrator, args: argparse.Namespace) -> None:
     password = args.password or getpass.getpass("Apple ID password: ")
-    session = orchestrator.ensure_session(
-        apple_id=args.apple_id,
-        password=password,
-        two_factor_code=args.code,
-    )
-    print(f"Trusted session for {session.apple_id} (token: {session.session_token})")
+    try:
+        session = orchestrator.ensure_session(
+            apple_id=args.apple_id,
+            password=password,
+            two_factor_code=args.code,
+        )
+        print(f"✅ Giriş başarılı!")
+        print(f"   Apple ID: {session.apple_id}")
+        print(f"   Oturum Güvenilir: {'Evet' if session.trusted else 'Hayır'}")
+        print(f"   Token: {session.session_token[:20]}...")
+        print("\n💡 Artık 'backup-list' komutuyla yedeklerinizi listeleyebilirsiniz.")
+    except AuthenticationError as exc:
+        print(f"❌ Kimlik doğrulama hatası: {exc}")
 
 
 def cmd_backup_list(orchestrator: Orchestrator, args: argparse.Namespace) -> None:
@@ -91,13 +98,26 @@ def cmd_backup_list(orchestrator: Orchestrator, args: argparse.Namespace) -> Non
     try:
         backups = orchestrator.list_backups()
     except (AuthenticationError, PermissionError) as exc:
-        print(str(exc))
+        print(f"❌ Hata: {exc}")
+        print("\n💡 İpucu: iCloud yedeklerini görmek için:")
+        print("   1. '--allow-private' bayrağını kullanın")
+        print("   2. '--apple-id' ile giriş yapın")
+        print("\n   Örnek: icloud-helper backup-list --allow-private --apple-id sizin@email.com")
         return
     if not backups:
-        print("No backups available under current policy.")
+        print("⚠️  Hiç yedek bulunamadı.")
+        print("\n💡 İpucu:")
+        print("   • iCloud yedekleri için: '--allow-private --apple-id sizin@email.com' kullanın")
+        print("   • USB yerel yedekler için: iOS cihazınızı bilgisayara bağlayın")
+        print("   • Mock veriler için: 'data/mock_icloud.json' dosyasına yeni yedekler ekleyin")
         return
+    print(f"✅ {len(backups)} yedek bulundu:\n")
+    print("ID\t\t\t\tCihaz Adı\t\tOluşturulma Tarihi\t\tBoyut")
+    print("=" * 100)
     for identifier, device_name, created_at, approx_size in backups:
-        print(f"{identifier}\t{device_name}\t{created_at}\t{approx_size} bytes")
+        size_mb = approx_size / (1024 * 1024) if approx_size > 1024 * 1024 else approx_size / 1024
+        size_unit = "MB" if approx_size > 1024 * 1024 else "KB"
+        print(f"{identifier}\t{device_name[:20]}\t{created_at}\t{size_mb:.2f} {size_unit}")
 
 
 def cmd_backup_plan(orchestrator: Orchestrator, args: argparse.Namespace) -> None:
@@ -105,10 +125,15 @@ def cmd_backup_plan(orchestrator: Orchestrator, args: argparse.Namespace) -> Non
         return
     try:
         device_name, total_files, total_bytes = orchestrator.plan(args.id, Path(args.dest))
+        size_gb = total_bytes / (1024 ** 3)
+        print(f"📦 Yedek Planı:")
+        print(f"   ID: {args.id}")
+        print(f"   Cihaz: {device_name}")
+        print(f"   Toplam Dosya: {total_files:,}")
+        print(f"   Toplam Boyut: {size_gb:.2f} GB ({total_bytes:,} bytes)")
+        print(f"   Hedef: {args.dest}")
     except (AuthenticationError, PermissionError, NotImplementedError) as exc:
-        print(str(exc))
-        return
-    print(f"Backup {args.id} ({device_name}) -> {total_files} files, {total_bytes} bytes")
+        print(f"❌ Hata: {exc}")
 
 
 def cmd_backup_download(orchestrator: Orchestrator, args: argparse.Namespace) -> None:
@@ -116,13 +141,16 @@ def cmd_backup_download(orchestrator: Orchestrator, args: argparse.Namespace) ->
     if not _maybe_refresh_session(orchestrator, args):
         return
     try:
+        print("⏳ İndirme başlatılıyor...")
         plan, result, verification, report = orchestrator.download(args.id, destination)
+        print(f"\n✅ İndirme tamamlandı!")
+        print(f"   Dosyalar: {result.downloaded_files}/{plan.total_files}")
+        print(f"   İndirilen: {result.downloaded_bytes / (1024**2):.2f} MB")
+        print(f"   Hedef: {destination}")
+        print(f"   Doğrulama: {'✅ Başarılı' if verification.ok else '❌ Başarısız'}")
+        print(f"   Rapor: {report}")
     except (AuthenticationError, PermissionError, NotImplementedError) as exc:
-        print(str(exc))
-        return
-    print(f"Downloaded {result.downloaded_files}/{plan.total_files} files to {destination}")
-    print(f"Verification {'OK' if verification.ok else 'FAILED'}")
-    print(f"Report saved to {report}")
+        print(f"❌ Hata: {exc}")
 
 
 def build_parser() -> argparse.ArgumentParser:

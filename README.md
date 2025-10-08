@@ -100,6 +100,74 @@ python -m icloud_multi_agent.cli --allow-private \
   backup-list
 ```
 
+## Sık Karşılaşılan Sorunlar ve Çözümleri
+
+### ❌ Backup'larımı göremiyorum!
+
+**Sorun:** GUI veya CLI'da yalnızca mock veriler (örn. "iPhone 13" demo backup) görünüyor, gerçek iCloud yedeklerim listelenmiyor.
+
+**Çözümler:**
+
+1. **"Özel uç noktalara izin ver" seçeneğini aktifleştirin:**
+   - **GUI'de:** "Özel uç noktalara izin ver (riskli)" checkbox'ını işaretleyin
+   - **CLI'de:** `--allow-private` bayrağını ekleyin
+
+2. **Apple ID ile giriş yapın:**
+   ```bash
+   # CLI için:
+   python -m icloud_multi_agent.cli --allow-private auth-login --apple-id sizin@email.com
+   
+   # GUI için:
+   Apple ID ve parolanızı girin → "Gönder" butonuna tıklayın → 2FA kodunu girin
+   ```
+
+3. **Giriş yaptıktan sonra backup listesini yenileyin:**
+   - GUI'de artık otomatik yenileniyor ✅
+   - CLI'de tekrar `backup-list` komutunu çalıştırın
+
+4. **USB üzerinden yerel backup'lar için:**
+   - iOS cihazınızı Mac/PC'ye bağlayın
+   - Finder (macOS) veya iTunes (Windows) ile yedekleme yapın
+   - macOS'ta "Tam Disk Erişimi" iznini Python'a verin
+
+### ⚠️ "Politika gereği devre dışı" hatası
+
+Bu hata, güvenlik nedeniyle özel uç noktalara erişimin kapalı olduğunu gösterir.
+
+**Çözüm:** `--allow-private` bayrağını kullanın veya GUI'de checkbox'ı işaretleyin.
+
+### 🔐 2FA kodu isteniyor
+
+Apple hesaplarınız 2FA ile korunuyorsa (ki korunmalı!), giriş yaparken size gönderilen 6 haneli kodu girmeniz gerekir.
+
+**CLI:**
+```bash
+python -m icloud_multi_agent.cli --allow-private auth-login \
+  --apple-id sizin@email.com --code 123456
+```
+
+**GUI:**
+1. Apple ID ve parola girin → "Gönder"
+2. iPhone/iPad'inizde beliren kodu göreceksiniz
+3. Kodu "2FA Kodu" alanına yazın → "2FA Doğrula"
+
+### 📱 MobileSync izin hatası (macOS)
+
+```
+PermissionError: MobileSync yedek klasörüne erişim izni bulunamadı
+```
+
+**Çözüm:**
+1. **Sistem Ayarları** → **Gizlilik ve Güvenlik** → **Tam Disk Erişimi**
+2. Python veya Terminal'e izin verin
+3. Uygulamayı yeniden başlatın
+
+Veya yedekleri erişilebilir bir klasöre kopyalayıp özel dizin belirtin:
+```bash
+python -m icloud_multi_agent.cli --allow-private \
+  --mobile-sync-dir "/Users/sizin_isim/Desktop/Backups" backup-list
+```
+
 ## Extending to Real Sources
 
 - The `CloudBackupICloudAPI` adapter relies on icloudpy to talk to Apple's private backup listing
