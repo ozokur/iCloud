@@ -17,10 +17,25 @@ class MockICloudAPI(ICloudAPI):
     data_file: Path
     policy: PolicyGate
 
+    def _resolve_data_file(self) -> Path | None:
+        """Return the path to the mock data file if it can be located."""
+
+        if self.data_file.exists():
+            return self.data_file
+        if not self.data_file.is_absolute():
+            # Allow running the CLI/GUI from outside the project root by
+            # resolving the relative path against potential package parents.
+            for parent in Path(__file__).resolve().parents:
+                candidate = parent / self.data_file
+                if candidate.exists():
+                    return candidate
+        return None
+
     def _load_data(self) -> dict:
-        if not self.data_file.exists():
+        path = self._resolve_data_file()
+        if path is None:
             return {"photos": [], "drive": [], "device_backups": []}
-        return json.loads(self.data_file.read_text())
+        return json.loads(path.read_text())
 
     def list_photos(self) -> Iterable[str]:
         return self._load_data().get("photos", [])
