@@ -71,6 +71,10 @@ The download command will produce:
 - Integrity logs in `outputs/logs/session.jsonl`.
 - A JSON report in `outputs/icloud_backups/reports`.
 
+On macOS the MobileSync directory is protected by "Full Disk Access". If you see a
+`PermissionError` while listing backups, grant the Python interpreter access under **System
+Settings → Privacy & Security → Full Disk Access** or copy the backups to a directory you control.
+
 If your MobileSync backups live in a non-standard directory you can point the CLI at additional
 locations using repeated `--mobile-sync-dir` flags:
 

@@ -153,12 +153,33 @@ class MobileSyncICloudAPI(ICloudAPI):
         return []
 
     def _iter_backup_dirs(self) -> Iterator[Path]:
+        permission_errors: list[tuple[Path, PermissionError]] = []
+        yielded = False
         for root in self._root_dirs:
-            if not root.exists() or not root.is_dir():
+            try:
+                if not root.exists() or not root.is_dir():
+                    continue
+            except OSError:
                 continue
-            for child in root.iterdir():
+            try:
+                entries = list(root.iterdir())
+            except PermissionError as exc:
+                permission_errors.append((root, exc))
+                continue
+            except OSError:
+                continue
+            for child in entries:
                 if child.is_dir():
+                    yielded = True
                     yield child
+        if not yielded and permission_errors:
+            attempted = ", ".join(str(root) for root, _ in permission_errors)
+            raise PermissionError(
+                "MobileSync yedek klasörüne erişim izni bulunamadı. macOS'ta Sistem Ayarları > "
+                "Güvenlik ve Gizlilik > Tam Disk Erişimi üzerinden Python'a yetki verin veya CLI'da "
+                "'--mobile-sync-dir' bayrağıyla erişilebilir bir dizin belirtin. "
+                f"Denenen dizinler: {attempted}"
+            ) from permission_errors[0][1]
 
     def _read_plist_metadata(self, backup_dir: Path) -> Tuple[str, str, int]:
         info_file = backup_dir / "Info.plist"
